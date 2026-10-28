@@ -21,7 +21,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 public class Constants {
 
     public static PinpointConfig localizerConfig = new PinpointConfig(c -> {
-        c.name.set("imu");
+        c.name.set("pinpoint");
         c.podType.set(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
         c.xPodOffset.set(5.81003444401298);
         c.yPodOffset.set(-6.73016045037217);
