@@ -29,10 +29,9 @@ public class BioBuzzauto extends LinearOpMode {
     private final Pose point3 = poseFactory.of(20.3388, 46.7225, -90.1221);
     private final Pose point4 = poseFactory.of(57.2512, 46.7565, -179.9473);
     private final Pose point5 = poseFactory.of(57.562, 8.1724, -89.5385);
-
     private final Pose point6 = poseFactory.of(57.6134, 8., 90);
-
     private final Pose point7= poseFactory.of (57.6134, 44, 90);
+
     // Autonomous routine
     public Command autoRoutine() {
         return sequential(
