@@ -35,6 +35,8 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.Servo;
 
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+
 /*
  * This OpMode executes a Tank Drive control TeleOp a direct drive robot
  * The code is structured as an Iterative OpMode
@@ -58,6 +60,7 @@ public class TeleopTankDrive extends OpMode{
     public DcMotor launcher = null;
     public DcMotor intake = null;
     public CRServo roller = null;
+    public Servo stick = null;
 
     /*
      * Code to run ONCE when the driver hits INIT
@@ -70,6 +73,7 @@ public class TeleopTankDrive extends OpMode{
         intake = hardwareMap.get(DcMotor.class, "intake");
         launcher = hardwareMap.get(DcMotor.class, "launcher");
         roller = hardwareMap.get(CRServo.class, "intake-servo");
+        stick = hardwareMap.get(Servo.class, "de-flower");
 
         //leftArm    = hardwareMap.get(DcMotor.class, "left_arm");
 
@@ -104,6 +108,7 @@ public class TeleopTankDrive extends OpMode{
      */
     @Override
     public void start() {
+        stick.setPosition(0);
     }
 
     /*
@@ -127,14 +132,17 @@ public class TeleopTankDrive extends OpMode{
         leftDrive.setPower(left);
         rightDrive.setPower(right);
         intake.setPower(leftTrigger);
-        launcher.setPower(rightTrigger);
+        launcher.setPower(0.55);
         roller.setPower(leftBumper ? 1.0 : 0);
+        if (gamepad1.dpad_down)    stick.setPosition(0.25);
+        else if (gamepad1.dpad_up) stick.setPosition(0);
 
         // Send telemetry message to signify robot running;
         //telemetry.addData("claw",  "Offset = %.2f", clawOffset);
         telemetry.addData("left",  "%.2f", left);
         telemetry.addData("right", "%.2f", right);
         telemetry.addData("left-bumper", (leftBumper ? "TRUE" : "FASLE"));
+        telemetry.addData("Launcher Power", rightTrigger);
     }
 
     /*
