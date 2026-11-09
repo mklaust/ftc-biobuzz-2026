@@ -32,6 +32,7 @@ package org.firstinspires.ftc.team24060;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.Servo;
 
@@ -57,7 +58,7 @@ public class TeleopTankDrive extends OpMode{
     /* Declare OpMode members. */
     public DcMotor  leftDrive   = null;
     public DcMotor  rightDrive  = null;
-    public DcMotor launcher = null;
+    public DcMotorEx launcher = null;
     public DcMotor intake = null;
     public CRServo roller = null;
     public Servo stick = null;
@@ -71,7 +72,7 @@ public class TeleopTankDrive extends OpMode{
         leftDrive  = hardwareMap.get(DcMotor.class, "back-left-motor");
         rightDrive = hardwareMap.get(DcMotor.class, "back-right-motor");
         intake = hardwareMap.get(DcMotor.class, "intake");
-        launcher = hardwareMap.get(DcMotor.class, "launcher");
+        launcher = hardwareMap.get(DcMotorEx.class, "launcher");
         roller = hardwareMap.get(CRServo.class, "intake-servo");
         stick = hardwareMap.get(Servo.class, "de-flower");
 
@@ -83,14 +84,9 @@ public class TeleopTankDrive extends OpMode{
         rightDrive.setDirection(DcMotor.Direction.REVERSE);
 
         // If there are encoders connected, switch to RUN_USING_ENCODER mode for greater accuracy
+        launcher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         // leftDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         // rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        // Define and initialize ALL installed servos.
-        //leftClaw  = hardwareMap.get(Servo.class, "left_hand");
-        //rightClaw = hardwareMap.get(Servo.class, "right_hand");
-        //leftClaw.setPosition(MID_SERVO);
-        //rightClaw.setPosition(MID_SERVO);
 
         // Send telemetry message to signify robot waiting;
         telemetry.addData(">", "Robot Ready.  Press START.");    //
@@ -108,7 +104,8 @@ public class TeleopTankDrive extends OpMode{
      */
     @Override
     public void start() {
-        stick.setPosition(0);
+        // Set the position so the servo can't fall
+        stick.setPosition(0.35);
     }
 
     /*
@@ -123,8 +120,8 @@ public class TeleopTankDrive extends OpMode{
         boolean leftBumper;
 
         // Run wheels in tank mode (note: The joystick goes negative when pushed forward, so negate it)
-        left = -gamepad1.left_stick_y;
-        right = -gamepad1.right_stick_y;
+        left  = Math.max(Math.min(-gamepad1.left_stick_y + gamepad1.right_stick_x, 1), -1);
+        right = Math.max(Math.min(-gamepad1.left_stick_y - gamepad1.right_stick_x, 1), -1);
         leftTrigger = gamepad1.left_trigger;
         rightTrigger = gamepad1. right_trigger;
         leftBumper = gamepad1.left_bumper;
@@ -132,17 +129,17 @@ public class TeleopTankDrive extends OpMode{
         leftDrive.setPower(left);
         rightDrive.setPower(right);
         intake.setPower(leftTrigger);
-        launcher.setPower(0.55);
+        launcher.setPower(0.53);
+
         roller.setPower(leftBumper ? 1.0 : 0);
-        if (gamepad1.dpad_down)    stick.setPosition(0.25);
+        if (gamepad1.dpad_down)    stick.setPosition(0.35);
         else if (gamepad1.dpad_up) stick.setPosition(0);
 
         // Send telemetry message to signify robot running;
-        //telemetry.addData("claw",  "Offset = %.2f", clawOffset);
         telemetry.addData("left",  "%.2f", left);
         telemetry.addData("right", "%.2f", right);
         telemetry.addData("left-bumper", (leftBumper ? "TRUE" : "FASLE"));
-        telemetry.addData("Launcher Power", rightTrigger);
+        telemetry.addData("Launcher Velocity", launcher.getVelocity());
     }
 
     /*
