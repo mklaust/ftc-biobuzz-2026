@@ -65,6 +65,8 @@ public class BioBuzzTeleOp19938 extends OpMode {
     DcMotor frontRightDrive;
     DcMotor backLeftDrive;
     DcMotor backRightDrive;
+    DcMotor frontFeed;
+    DcMotor backFeed;
     DcMotorEx launcher;
     DcMotor spindexer;
     DistanceSensor distanceSensorRight;
@@ -81,6 +83,9 @@ public class BioBuzzTeleOp19938 extends OpMode {
         frontRightDrive = hardwareMap.get(DcMotor.class, "front_right");
         backLeftDrive = hardwareMap.get(DcMotor.class, "back_left");
         backRightDrive = hardwareMap.get(DcMotor.class, "back_right");
+
+        frontFeed = hardwareMap.get(DcMotor.class, "frontFeed");
+        backFeed = hardwareMap.get(DcMotor.class, "backFeed");
 
         launcher = hardwareMap.get(DcMotorEx.class, "launcher");
         spindexer = hardwareMap.get(DcMotor.class, "spindexer");
@@ -128,6 +133,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
         if (gamepad1.a) {
             imu.resetYaw();
         }
+
         // If you press the left bumper, you get a drive from the point of view of the robot
         // (much like driving an RC vehicle)
         if (gamepad1.left_bumper) {
@@ -139,6 +145,9 @@ public class BioBuzzTeleOp19938 extends OpMode {
         launcher.setVelocity(gamepad1.left_trigger * 2800);
 
         spindexer.setPower(gamepad1.right_bumper ? 0.7 : 0);
+
+        frontFeed.setPower(gamepad1.dpad_up ? -0.8 : 0);
+        backFeed.setPower(gamepad1.dpad_down ? 0.8 : 0);
 
         telemetry.addData("Left distance (cm): ", "%.3f", distanceSensorLeft.getDistance(DistanceUnit.CM));
         telemetry.addData("right distance (cm): ", "%.3f", distanceSensorRight.getDistance(DistanceUnit.CM));
