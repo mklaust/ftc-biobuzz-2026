@@ -19,8 +19,10 @@ public class SpindexerIndexer {
 
     public void indexBallClockwise() {
         slots[currentInputSlotIndex] = true;
-        // Advance array index 1 position clockwise (modulo 5)
-        currentInputSlotIndex = (currentInputSlotIndex + 1) % 5;
+        if (!isFull()) {
+            // Advance array index 1 position clockwise (modulo 5)
+            currentInputSlotIndex = (currentInputSlotIndex + 1) % 5;
+        }
     }
 
     public void resetTracker() {

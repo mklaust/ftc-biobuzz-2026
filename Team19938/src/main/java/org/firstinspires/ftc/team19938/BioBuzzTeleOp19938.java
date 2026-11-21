@@ -174,6 +174,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
 
         switch (spindexerState) {
             case INDEXING:
+                // Avoid firing while we're indexing to make sure we don't get out of sync
                 if (!spindexer.isBusy()) {
                     spindexerState = SpindexerState.IDLE;
                 }
@@ -187,14 +188,20 @@ public class BioBuzzTeleOp19938 extends OpMode {
                 }
                 break;
             case FILLED:
+                if (launchRequested) {
+                    launch();
+                    spindexerState = SpindexerState.FIRING;
+                }
                 break;
             case IDLE:
                 if (launchRequested) {
                     launch();
                     spindexerState = SpindexerState.FIRING;
-                } else if (spindexerIndexer.isFull()) {
+                }
+                else if (spindexerIndexer.isFull()) {
                     spindexerState = SpindexerState.FILLED;
-                } else if (ballDetectedRight) {
+                }
+                else if (ballDetectedRight) {
                     spindexerIndexer.indexBallClockwise();
                     if (spindexerIndexer.isFull()) {
                         spindexerState = SpindexerState.FILLED;
