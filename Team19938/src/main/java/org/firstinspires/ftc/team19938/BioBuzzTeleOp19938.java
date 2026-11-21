@@ -31,14 +31,10 @@ package org.firstinspires.ftc.team19938;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
-import com.qualcomm.robotcore.hardware.NormalizedRGBA;
-import com.qualcomm.robotcore.hardware.OpticalDistanceSensor;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
@@ -61,18 +57,33 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 //@Disabled
 public class BioBuzzTeleOp19938 extends OpMode {
     // This declares the four motors needed
-    DcMotor frontLeftDrive;
-    DcMotor frontRightDrive;
-    DcMotor backLeftDrive;
-    DcMotor backRightDrive;
-    DcMotor frontFeed;
-    DcMotor backFeed;
-    DcMotorEx launcher;
-    DcMotor spindexer;
-    DistanceSensor distanceSensorRight;
-    DistanceSensor distanceSensorLeft;
+    private DcMotor frontLeftDrive;
+    private DcMotor frontRightDrive;
+    private DcMotor backLeftDrive;
+    private DcMotor backRightDrive;
+    private DcMotor feederRight;
+    private DcMotor feederLeft;
+    private DcMotorEx launcher;
+    private DcMotor spindexer;
+    private DistanceSensor distanceSensorRight;
+    private DistanceSensor distanceSensorLeft;
+    private SpindexerIndexer spindexerIndexer;
+    private DirectionalIntaking directionalIntaking;
+    private SpindexerState spindexerState;
+    private int spindexerPos;
+    private static final double BALL_THRESHOLD = 10.0;
+    private static final int TICKS_PER_FULL_360 = 288;
+    private static final double FLUSH_SPEED = 0.7;
+    private static final int TICKS_PER_SPINDEXER_SLOT = 58;
+    private static final double INDEX_SPEED = 0.3;
 
 
+    public enum SpindexerState {
+        INDEXING, // lets one in and spins to an empty spot so it can let another in, will have to integrate with directional intaking
+        FIRING,   // spins to fireballs, also might be good to integrate with directional
+        FILLED,   // leaves empty space in front of launcher,
+        IDLE      // does nothing, nulls intake - also should have manual rotation function button of 1/5
+    }
 
     // This declares the IMU needed to get the current direction the robot is facing
     IMU imu;
@@ -84,8 +95,8 @@ public class BioBuzzTeleOp19938 extends OpMode {
         backLeftDrive = hardwareMap.get(DcMotor.class, "back_left");
         backRightDrive = hardwareMap.get(DcMotor.class, "back_right");
 
-        frontFeed = hardwareMap.get(DcMotor.class, "frontFeed");
-        backFeed = hardwareMap.get(DcMotor.class, "backFeed");
+        feederRight = hardwareMap.get(DcMotor.class, "frontFeed");
+        feederLeft = hardwareMap.get(DcMotor.class, "backFeed");
 
         launcher = hardwareMap.get(DcMotorEx.class, "launcher");
         spindexer = hardwareMap.get(DcMotor.class, "spindexer");
@@ -109,24 +120,45 @@ public class BioBuzzTeleOp19938 extends OpMode {
         backLeftDrive.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         backRightDrive.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
+        spindexer.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        spindexer.setTargetPosition(0);
+        spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+
         imu = hardwareMap.get(IMU.class, "IMU");
         // This needs to be changed to match the orientation on your robot
         RevHubOrientationOnRobot.LogoFacingDirection logoDirection =
-                RevHubOrientationOnRobot.LogoFacingDirection.LEFT;
+                RevHubOrientationOnRobot.LogoFacingDirection.UP;
         RevHubOrientationOnRobot.UsbFacingDirection usbDirection =
-                RevHubOrientationOnRobot.UsbFacingDirection.UP;
+                RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
 
         RevHubOrientationOnRobot orientationOnRobot = new
                 RevHubOrientationOnRobot(logoDirection, usbDirection);
         imu.initialize(new IMU.Parameters(orientationOnRobot));
+
+        spindexerIndexer = new SpindexerIndexer();
+        directionalIntaking = new DirectionalIntaking(
+                frontLeftDrive,
+                frontRightDrive,
+                backLeftDrive,
+                backRightDrive,
+                feederRight,
+                feederLeft
+        );
+
+        spindexerState = SpindexerState.IDLE;
+        spindexerPos = 0;
     }
 
     @Override
     public void loop() {
-        telemetry.addLine("Press A to reset Yaw");
-        telemetry.addLine("Hold left bumper to drive in robot relative");
-        telemetry.addLine("The left joystick sets the robot direction");
-        telemetry.addLine("Moving the right joystick left and right turns the robot");
+
+        telemetry.addData("spindexerPos", spindexerPos);
+        telemetry.addData("spindexer state", spindexerState);
+        telemetry.addData("ball count", spindexerIndexer.getBallCount());
+        telemetry.addData("Left distance (cm): ", "%.3f", distanceSensorLeft.getDistance(DistanceUnit.CM));
+        telemetry.addData("right distance (cm): ", "%.3f", distanceSensorRight.getDistance(DistanceUnit.CM));
+
+        launcher.setVelocity(2000);
 
         // If you press the A button, then you reset the Yaw to be zero from the way
         // the robot is currently pointing
@@ -134,73 +166,127 @@ public class BioBuzzTeleOp19938 extends OpMode {
             imu.resetYaw();
         }
 
-        // If you press the left bumper, you get a drive from the point of view of the robot
-        // (much like driving an RC vehicle)
-        if (gamepad1.left_bumper) {
-            drive(-gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
-        } else {
-            driveFieldRelative(-gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
+        directionalIntaking.update(gamepad1, spindexerIndexer);
+
+        boolean ballDetectedRight = distanceSensorRight.getDistance(DistanceUnit.CM) < BALL_THRESHOLD;
+        boolean ballDetectedLeft = distanceSensorLeft.getDistance(DistanceUnit.CM) < BALL_THRESHOLD;
+        boolean launchRequested = gamepad1.left_bumper;
+
+        switch (spindexerState) {
+            case INDEXING:
+                if (!spindexer.isBusy()) {
+                    spindexerState = SpindexerState.IDLE;
+                }
+                break;
+            case FIRING:
+                if (!spindexer.isBusy()) {
+                    spindexer.setPower(0.0);
+                    //spindexer.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                    spindexerIndexer.resetTracker();
+                    spindexerState = SpindexerState.IDLE;
+                }
+                break;
+            case FILLED:
+                break;
+            case IDLE:
+                if (launchRequested) {
+                    launch();
+                    spindexerState = SpindexerState.FIRING;
+                } else if (spindexerIndexer.isFull()) {
+                    spindexerState = SpindexerState.FILLED;
+                } else if (ballDetectedRight) {
+                    spindexerIndexer.indexBallClockwise();
+                    if (spindexerIndexer.isFull()) {
+                        spindexerState = SpindexerState.FILLED;
+                    }
+                    else {
+                        chamberIntake();
+                        spindexerState = SpindexerState.INDEXING;
+                    }
+                }
+
+                break;
         }
 
-        launcher.setVelocity(gamepad1.left_trigger * 2800);
 
-        spindexer.setPower(gamepad1.right_bumper ? 0.7 : 0);
 
-        frontFeed.setPower(gamepad1.dpad_up ? -0.8 : 0);
-        backFeed.setPower(gamepad1.dpad_down ? 0.8 : 0);
 
-        telemetry.addData("Left distance (cm): ", "%.3f", distanceSensorLeft.getDistance(DistanceUnit.CM));
-        telemetry.addData("right distance (cm): ", "%.3f", distanceSensorRight.getDistance(DistanceUnit.CM));
+
+        // If you press the left bumper, you get a drive from the point of view of the robot
+        // (much like driving an RC vehicle)
+//        if (gamepad1.left_bumper) {
+//            drive(-gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
+//        } else {
+//            driveFieldRelative(-gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
+//        }
 
         telemetry.update();
     }
+
+    private void launch() {
+        spindexerPos = spindexer.getCurrentPosition() + TICKS_PER_FULL_360;
+        spindexer.setTargetPosition(spindexerPos);
+        //spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        spindexer.setPower(FLUSH_SPEED);
+    }
+
+    private void chamberIntake(){
+        spindexerPos = spindexer.getCurrentPosition() - TICKS_PER_SPINDEXER_SLOT;
+        spindexer.setTargetPosition(spindexerPos);
+        //spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        spindexer.setPower(INDEX_SPEED);
+    }
+
 // sensors named this \/
     //color_sensor_right/left
 
     // This routine drives the robot field relative
-    private void driveFieldRelative(double forward, double right, double rotate) {
-        // First, convert direction being asked to drive to polar coordinates
-        double theta = Math.atan2(forward, right);
-        double r = Math.hypot(right, forward);
+//    private void driveFieldRelative(double forward, double right, double rotate) {
+//        // First, convert direction being asked to drive to polar coordinates
+//        double theta = Math.atan2(forward, right);
+//        double r = Math.hypot(right, forward);
+//
+//        // Second, rotate angle by the angle the robot is pointing
+//        theta = AngleUnit.normalizeRadians(theta -
+//                imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS));
+//
+//        // Third, convert back to cartesian
+//        double newForward = r * Math.sin(theta);
+//        double newRight = r * Math.cos(theta);
+//
+//        // Finally, call the drive method with robot relative forward and right amounts
+//        drive(newForward, newRight, rotate);
+//    }
 
-        // Second, rotate angle by the angle the robot is pointing
-        theta = AngleUnit.normalizeRadians(theta -
-                imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS));
+    //spindexer procedures \/
 
-        // Third, convert back to cartesian
-        double newForward = r * Math.sin(theta);
-        double newRight = r * Math.cos(theta);
-
-        // Finally, call the drive method with robot relative forward and right amounts
-        drive(newForward, newRight, rotate);
-    }
 
     // Thanks to FTC16072 for sharing this code!!
-    public void drive(double forward, double right, double rotate) {
-        // This calculates the power needed for each wheel based on the amount of forward,
-        // strafe right, and rotate
-        double frontLeftPower = forward + right + rotate;
-        double frontRightPower = forward - right - rotate;
-        double backRightPower = forward + right - rotate;
-        double backLeftPower = forward - right + rotate;
-
-        double maxPower = 1.0;
-        double maxSpeed = 1.0;  // make this slower for outreaches
-
-        // This is needed to make sure we don't pass > 1.0 to any wheel
-        // It allows us to keep all of the motors in proportion to what they should
-        // be and not get clipped
-        maxPower = Math.max(maxPower, Math.abs(frontLeftPower));
-        maxPower = Math.max(maxPower, Math.abs(frontRightPower));
-        maxPower = Math.max(maxPower, Math.abs(backRightPower));
-        maxPower = Math.max(maxPower, Math.abs(backLeftPower));
-
-        // We multiply by maxSpeed so that it can be set lower for outreaches
-        // When a young child is driving the robot, we may not want to allow full
-        // speed.
-        frontLeftDrive.setPower(maxSpeed * (frontLeftPower / maxPower));
-        frontRightDrive.setPower(maxSpeed * (frontRightPower / maxPower));
-        backLeftDrive.setPower(maxSpeed * (backLeftPower / maxPower));
-        backRightDrive.setPower(maxSpeed * (backRightPower / maxPower));
-    }
+//    public void drive(double forward, double right, double rotate) {
+//        // This calculates the power needed for each wheel based on the amount of forward,
+//        // strafe right, and rotate
+//        double frontLeftPower = forward + right + rotate;
+//        double frontRightPower = forward - right - rotate;
+//        double backRightPower = forward + right - rotate;
+//        double backLeftPower = forward - right + rotate;
+//
+//        double maxPower = 1.0;
+//        double maxSpeed = 1.0;  // make this slower for outreaches
+//
+//        // This is needed to make sure we don't pass > 1.0 to any wheel
+//        // It allows us to keep all of the motors in proportion to what they should
+//        // be and not get clipped
+//        maxPower = Math.max(maxPower, Math.abs(frontLeftPower));
+//        maxPower = Math.max(maxPower, Math.abs(frontRightPower));
+//        maxPower = Math.max(maxPower, Math.abs(backRightPower));
+//        maxPower = Math.max(maxPower, Math.abs(backLeftPower));
+//
+//        // We multiply by maxSpeed so that it can be set lower for outreaches
+//        // When a young child is driving the robot, we may not want to allow full
+//        // speed.
+//        frontLeftDrive.setPower(maxSpeed * (frontLeftPower / maxPower));
+//        frontRightDrive.setPower(maxSpeed * (frontRightPower / maxPower));
+//        backLeftDrive.setPower(maxSpeed * (backLeftPower / maxPower));
+//        backRightDrive.setPower(maxSpeed * (backRightPower / maxPower));
+//    }
 }
