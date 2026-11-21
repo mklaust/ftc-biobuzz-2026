@@ -56,6 +56,16 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 @TeleOp(name = "TeleOp-19938", group = "Robot")
 //@Disabled
 public class BioBuzzTeleOp19938 extends OpMode {
+
+    public static final double  BALL_THRESHOLD = 8.0;
+    public static final int     TICKS_PER_FULL_360 = 288;
+    public static final double  INDEXER_SPEED = 0.85;
+    public static final double  DECELERATION_SPEED = 0.45;
+    public static final int     TICKS_PER_SPINDEXER_SLOT = 58;
+    public static final double  LAUNCH_SPEED = 2000;
+    public static final int     TICK_THRESHOLD = 5;
+
+
     // This declares the four motors needed
     private DcMotor frontLeftDrive;
     private DcMotor frontRightDrive;
@@ -64,18 +74,13 @@ public class BioBuzzTeleOp19938 extends OpMode {
     private DcMotor feederRight;
     private DcMotor feederLeft;
     private DcMotorEx launcher;
-    private DcMotor spindexer;
+    private DcMotorEx spindexer;
     private DistanceSensor distanceSensorRight;
     private DistanceSensor distanceSensorLeft;
     private SpindexerIndexer spindexerIndexer;
     private DirectionalIntaking directionalIntaking;
     private SpindexerState spindexerState;
     private int spindexerPos;
-    private static final double BALL_THRESHOLD = 10.0;
-    private static final int TICKS_PER_FULL_360 = 288;
-    private static final double FLUSH_SPEED = 0.7;
-    private static final int TICKS_PER_SPINDEXER_SLOT = 58;
-    private static final double INDEX_SPEED = 0.3;
 
 
     public enum SpindexerState {
@@ -99,7 +104,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
         feederLeft = hardwareMap.get(DcMotor.class, "backFeed");
 
         launcher = hardwareMap.get(DcMotorEx.class, "launcher");
-        spindexer = hardwareMap.get(DcMotor.class, "spindexer");
+        spindexer = hardwareMap.get(DcMotorEx.class, "spindexer");
 
         distanceSensorRight = hardwareMap.get(DistanceSensor.class, "color_sensor_right");
         distanceSensorLeft = hardwareMap.get(DistanceSensor.class, "color_sensor_left");
@@ -123,6 +128,10 @@ public class BioBuzzTeleOp19938 extends OpMode {
         spindexer.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         spindexer.setTargetPosition(0);
         spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        spindexer.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        spindexer.setVelocityPIDFCoefficients(5.46, 0.55, 0.0, 54.6);
+        spindexer.setPositionPIDFCoefficients(5.0);
+        spindexer.setPower(INDEXER_SPEED);
 
         imu = hardwareMap.get(IMU.class, "IMU");
         // This needs to be changed to match the orientation on your robot
@@ -142,7 +151,8 @@ public class BioBuzzTeleOp19938 extends OpMode {
                 backLeftDrive,
                 backRightDrive,
                 feederRight,
-                feederLeft
+                feederLeft,
+                spindexer
         );
 
         spindexerState = SpindexerState.IDLE;
@@ -152,13 +162,15 @@ public class BioBuzzTeleOp19938 extends OpMode {
     @Override
     public void loop() {
 
-        telemetry.addData("spindexerPos", spindexerPos);
-        telemetry.addData("spindexer state", spindexerState);
-        telemetry.addData("ball count", spindexerIndexer.getBallCount());
-        telemetry.addData("Left distance (cm): ", "%.3f", distanceSensorLeft.getDistance(DistanceUnit.CM));
-        telemetry.addData("right distance (cm): ", "%.3f", distanceSensorRight.getDistance(DistanceUnit.CM));
+        telemetry.addData("Spindexer Target Position:  ", spindexer.getTargetPosition());
+        telemetry.addData("Spindexer Actual Position:  ", spindexer.getCurrentPosition());
+        telemetry.addData("Spindexer State:            ", spindexerState);
+        telemetry.addData("Tick Threshold?:            ", Math.abs(spindexer.getTargetPosition() - spindexer.getCurrentPosition()) <= TICK_THRESHOLD);
+        telemetry.addData("Ball Count:                 ", spindexerIndexer.getBallCount());
+        telemetry.addData("Left distance  (cm):        ", "%.3f", distanceSensorLeft.getDistance(DistanceUnit.CM));
+        telemetry.addData("right distance (cm):        ", "%.3f", distanceSensorRight.getDistance(DistanceUnit.CM));
 
-        launcher.setVelocity(2000);
+        launcher.setVelocity(LAUNCH_SPEED);
 
         // If you press the A button, then you reset the Yaw to be zero from the way
         // the robot is currently pointing
@@ -170,18 +182,20 @@ public class BioBuzzTeleOp19938 extends OpMode {
 
         boolean ballDetectedRight = distanceSensorRight.getDistance(DistanceUnit.CM) < BALL_THRESHOLD;
         boolean ballDetectedLeft = distanceSensorLeft.getDistance(DistanceUnit.CM) < BALL_THRESHOLD;
-        boolean launchRequested = gamepad1.left_bumper;
+        boolean launchRequested = gamepad1.b;
+
+        telemetry.addData("Launch?: ", launchRequested);
 
         switch (spindexerState) {
             case INDEXING:
                 // Avoid firing while we're indexing to make sure we don't get out of sync
-                if (!spindexer.isBusy()) {
+                if (isAtTargetPosition()) {
                     spindexerState = SpindexerState.IDLE;
                 }
                 break;
             case FIRING:
-                if (!spindexer.isBusy()) {
-                    spindexer.setPower(0.0);
+                if (isAtTargetPosition()) {
+                    spindexer.setPower(INDEXER_SPEED);
                     //spindexer.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
                     spindexerIndexer.resetTracker();
                     spindexerState = SpindexerState.IDLE;
@@ -231,17 +245,22 @@ public class BioBuzzTeleOp19938 extends OpMode {
     }
 
     private void launch() {
-        spindexerPos = spindexer.getCurrentPosition() + TICKS_PER_FULL_360;
+        spindexerPos -= TICKS_PER_FULL_360;
         spindexer.setTargetPosition(spindexerPos);
         //spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        spindexer.setPower(FLUSH_SPEED);
+        spindexer.setPower(INDEXER_SPEED);
     }
 
     private void chamberIntake(){
-        spindexerPos = spindexer.getCurrentPosition() - TICKS_PER_SPINDEXER_SLOT;
+        spindexerPos -= TICKS_PER_SPINDEXER_SLOT;
         spindexer.setTargetPosition(spindexerPos);
         //spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        spindexer.setPower(INDEX_SPEED);
+        spindexer.setPower(INDEXER_SPEED);
+    }
+
+    private boolean isAtTargetPosition() {
+        int remainingTicks = Math.abs(spindexer.getTargetPosition() - spindexer.getCurrentPosition());
+        return remainingTicks <= TICK_THRESHOLD;
     }
 
 // sensors named this \/
