@@ -3,13 +3,15 @@ package org.firstinspires.ftc.team19938;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.Gamepad;
+import com.qualcomm.robotcore.hardware.IMU;
 
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.teamcode.BiobuzzTeleOp;
 
 public class DirectionalIntaking {
 
     private static final double VELOCITY_THRESHOLD = 0.1; // Min drive threshold for auto-intake
-    private static final double INTAKE_SPEED = 0.4; // 0.8
+    private static final double INTAKE_SPEED = 0.8;
 
     private final DcMotor frontLeft;
     private final DcMotor frontRight;
@@ -17,18 +19,19 @@ public class DirectionalIntaking {
     private final DcMotor backRight;
     private final DcMotor feederRight;
     private final DcMotor feederLeft;
-    private final DcMotorEx spindexer;
 
     private boolean dualInputEnabled = false; // Toggle for single vs dual input logic
 
-    public DirectionalIntaking(DcMotor fl, DcMotor fr, DcMotor bl, DcMotor br, DcMotor fR, DcMotor fL, DcMotorEx spindexer) {
+    IMU imu;
+
+    public DirectionalIntaking(DcMotor fl, DcMotor fr, DcMotor bl, DcMotor br, DcMotor fR, DcMotor fL, IMU imu) {
         this.frontLeft = fl;
         this.frontRight = fr;
         this.backLeft = bl;
         this.backRight = br;
         this.feederRight = fR;
         this.feederLeft = fL;
-        this.spindexer = spindexer;
+        this.imu = imu;
     }
 
     public void setDualInputEnabled(boolean enabled) {
@@ -39,16 +42,32 @@ public class DirectionalIntaking {
         return dualInputEnabled;
     }
 
-    public void update(Gamepad driverGamepad, SpindexerIndexer tracker) {
-        // 1. Mecanum Drive Calculation
+    public void update(Gamepad driverGamepad, SpindexerIndexer tracker, boolean isSpindexerMoving) {
         double drive  = -driverGamepad.left_stick_y;
         double strafe =  driverGamepad.left_stick_x;
         double turn   =  driverGamepad.right_stick_x;
 
-        double flPower = drive + strafe + turn;
-        double blPower = drive - strafe + turn;
-        double frPower = drive - strafe - turn;
-        double brPower = drive + strafe - turn;
+
+        double theta = Math.atan2(drive, strafe);
+        double r = Math.hypot(strafe, drive);
+
+        // Second, rotate angle by the angle the robot is pointing
+        theta = AngleUnit.normalizeRadians(theta -
+                imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS));
+
+        // Third, convert back to cartesian
+        double newDrive = r * Math.sin(theta);
+        double newStrafe = r * Math.cos(theta);
+
+
+
+        // 1. Mecanum Drive Calculation
+
+
+        double flPower = newDrive + newStrafe + turn;
+        double blPower = newDrive - newStrafe + turn;
+        double frPower = newDrive - newStrafe - turn;
+        double brPower = newDrive + newStrafe - turn;
 
         // Normalize motor powers
         double max = Math.max(Math.abs(flPower), Math.max(Math.abs(blPower),
@@ -66,10 +85,9 @@ public class DirectionalIntaking {
         backRight.setPower(brPower);
 
         // 2. Automated Feeder Power Selection Logic based on drive direction
-        double forwardVelocity = drive; // Velocity direction approximation from joystick input
-        boolean spindexerMoving = Math.abs(spindexer.getTargetPosition() - spindexer.getCurrentPosition()) > BioBuzzTeleOp19938.TICK_THRESHOLD;
+        double forwardVelocity = newDrive; // Velocity direction approximation from joystick input
 
-        if (tracker.isFull() || spindexerMoving) {
+        if (tracker.isFull() || isSpindexerMoving) {
             // Shut off all feeders when capacity (4 balls) is reached
             feederRight.setPower(0.0);
         //    feederLeft.setPower(0.0);

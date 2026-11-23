@@ -28,6 +28,7 @@
  */
 package org.firstinspires.ftc.team19938;
 
+import com.pedropathing.utils.Timer;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -38,6 +39,9 @@ import com.qualcomm.robotcore.hardware.IMU;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+
+import java.util.concurrent.TimeUnit;
+
 
 /*
  * This OpMode illustrates how to program your robot to drive field relative.  This means
@@ -57,13 +61,16 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 //@Disabled
 public class BioBuzzTeleOp19938 extends OpMode {
 
-    public static final double  BALL_THRESHOLD = 8.0;
+    public static final double  BALL_THRESHOLD = 8;
     public static final int     TICKS_PER_FULL_360 = 288;
     public static final double  INDEXER_SPEED = 0.85;
+    public static final double  FLUSH_SPEED = 0.2;
+
     public static final double  DECELERATION_SPEED = 0.45;
     public static final int     TICKS_PER_SPINDEXER_SLOT = 58;
-    public static final double  LAUNCH_SPEED = 2000;
-    public static final int     TICK_THRESHOLD = 5;
+    public static final double  LAUNCH_SPEED = 2300;
+    public static final int     TICK_THRESHOLD = 8;
+    public static final int DETECTION_TIMMEOUT_MS = 250;
 
 
     // This declares the four motors needed
@@ -81,6 +88,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
     private DirectionalIntaking directionalIntaking;
     private SpindexerState spindexerState;
     private int spindexerPos;
+    private Timer detectionTimer = null;
 
 
     public enum SpindexerState {
@@ -152,7 +160,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
                 backRightDrive,
                 feederRight,
                 feederLeft,
-                spindexer
+                imu
         );
 
         spindexerState = SpindexerState.IDLE;
@@ -178,7 +186,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
             imu.resetYaw();
         }
 
-        directionalIntaking.update(gamepad1, spindexerIndexer);
+        directionalIntaking.update(gamepad1, spindexerIndexer, (!isAtTargetPosition() || detectionTimer != null));
 
         boolean ballDetectedRight = distanceSensorRight.getDistance(DistanceUnit.CM) < BALL_THRESHOLD;
         boolean ballDetectedLeft = distanceSensorLeft.getDistance(DistanceUnit.CM) < BALL_THRESHOLD;
@@ -210,19 +218,29 @@ public class BioBuzzTeleOp19938 extends OpMode {
             case IDLE:
                 if (launchRequested) {
                     launch();
+                    detectionTimer = null;
                     spindexerState = SpindexerState.FIRING;
-                }
-                else if (spindexerIndexer.isFull()) {
+
+                //for eject \/
+                //else if (gamepad1.x) { 
+                //feederRight.setPower(-);
+                } else if (spindexerIndexer.isFull()) {
+                    detectionTimer = null;
                     spindexerState = SpindexerState.FILLED;
                 }
                 else if (ballDetectedRight) {
-                    spindexerIndexer.indexBallClockwise();
-                    if (spindexerIndexer.isFull()) {
-                        spindexerState = SpindexerState.FILLED;
-                    }
-                    else {
-                        chamberIntake();
-                        spindexerState = SpindexerState.INDEXING;
+                    if (detectionTimer == null) {
+                        detectionTimer = new Timer();
+                        detectionTimer.reset();
+                    } else if (detectionTimer.get(TimeUnit.MILLISECONDS) > DETECTION_TIMMEOUT_MS) {
+                        detectionTimer = null;
+                        spindexerIndexer.indexBallClockwise();
+                        if (spindexerIndexer.isFull()) {
+                            spindexerState = SpindexerState.FILLED;
+                        } else {
+                            chamberIntake();
+                            spindexerState = SpindexerState.INDEXING;
+                        }
                     }
                 }
 
@@ -248,7 +266,7 @@ public class BioBuzzTeleOp19938 extends OpMode {
         spindexerPos -= TICKS_PER_FULL_360;
         spindexer.setTargetPosition(spindexerPos);
         //spindexer.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        spindexer.setPower(INDEXER_SPEED);
+        spindexer.setPower(FLUSH_SPEED);
     }
 
     private void chamberIntake(){
